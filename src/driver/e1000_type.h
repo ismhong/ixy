@@ -2,6 +2,9 @@
 // E1000 hardware definitions: registers and DMA ring format.
 // from the Intel 82540EP/EM &c manual.
 // https://www.intel.com/content/dam/doc/manual/pci-pci-x-family-gbe-controllers-software-dev-manual.pdf
+//
+// For Intel 82574 (E1000E), it seems most registers are the same with E1000 for controlling RX/RX.
+// https://docs.rs-online.com/96e8/0900766b81384733.pdf
 
 /* Registers */
 #define E1000_CTL      0x00000  /* Device Control Register - RW */
