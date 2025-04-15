@@ -1,0 +1,20 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  # Ubuntu 22.04 LTS 64-bit
+  config.vm.box = "ubuntu/jammy64"
+
+  config.vm.network "public_network"
+
+  # Use VBOX as provider
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "ubuntu2204-e1000-dev"
+    vb.memory = "2048"
+    vb.cpus = "2"
+
+    # Add 82540EM
+    vb.customize ["modifyvm", :id, "--nictype2", "82540EM"]
+  end
+
+end

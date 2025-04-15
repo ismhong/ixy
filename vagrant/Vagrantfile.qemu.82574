@@ -1,0 +1,21 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2204"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider :qemu do |qe|
+    qe.memory = "2G"    # if don't want to use default value
+    qe.arch = "x86_64"
+    qe.machine = "q35"
+    qe.cpu = "max"
+    qe.net_device = "virtio-net-pci"
+    qe.qemu_dir = '/usr/bin'
+    qe.extra_qemu_args = [
+      "-device", "e1000e,netdev=net1,mac=52:54:00:12:34:56",
+      "-netdev", "user,id=net1",
+      #%w(-virtfs local,path=.,mount_tag=shared,security_model=mapped)
+    ]
+  end
+
+  config.vm.provider "qemu"
+
+end
