@@ -18,3 +18,5 @@ ixy-fwd
 ixy-pktgen
 *.o
 *.so
+build.*
+output/
