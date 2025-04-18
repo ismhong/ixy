@@ -1,4 +1,3 @@
-#include <emmintrin.h>
 #include <linux/limits.h>
 #include <linux/vfio.h>
 #include <stdlib.h>

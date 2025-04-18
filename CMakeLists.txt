@@ -3,7 +3,7 @@ project(ixy C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_compile_options(-g -O2 -march=native -fomit-frame-pointer -std=c11
+add_compile_options(-g -O2 -march=native -fomit-frame-pointer
 	-D_XOPEN_SOURCE=700
 	-D_DEFAULT_SOURCE
 	-Wall
@@ -18,6 +18,8 @@ include_directories(
 )
 
 set(SOURCE_COMMON src/pci.c src/memory.c src/stats.c src/interrupts.c src/driver/device.c  src/driver/e1000.c src/driver/ixgbe.c src/driver/virtio.c src/libixy-vfio.c)
+
+set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 add_executable(ixy-pktgen src/app/ixy-pktgen.c ${SOURCE_COMMON})
 add_executable(ixy-fwd src/app/ixy-fwd.c ${SOURCE_COMMON})

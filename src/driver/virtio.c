@@ -1,8 +1,14 @@
+#ifdef __SSE2__
 #include <emmintrin.h>
+#define MEMORY_BARRIER() _mm_mfence()
+#else
+#define MEMORY_BARRIER() __sync_synchronize()
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "driver/device.h"
 #include "log.h"
@@ -110,7 +116,7 @@ static void virtio_legacy_send_command(struct virtio_device* dev, void* cmd, siz
 		error("Command class is not supported");
 	}
 
-	_mm_mfence();
+	MEMORY_BARRIER();
 	// Find free desciptor slot
 	uint16_t idx = 0;
 	for (idx = 0; idx < vq->vring.num; ++idx) {
@@ -158,16 +164,16 @@ static void virtio_legacy_send_command(struct virtio_device* dev, void* cmd, siz
 	vq->vring.desc[idx + 2].flags = VRING_DESC_F_WRITE;
 	vq->vring.desc[idx + 2].next = 0;
 	vq->vring.avail->ring[vq->vring.avail->idx % vq->vring.num] = idx;
-	_mm_mfence();
+	MEMORY_BARRIER();
 	vq->vring.avail->idx++;
-	_mm_mfence();
+	MEMORY_BARRIER();
 
 	virtio_legacy_notify_queue(dev, 2);
-	_mm_mfence();
+	MEMORY_BARRIER();
 
 	// Wait until the buffer got processed
 	while (vq->vq_used_last_idx == vq->vring.used->idx) {
-		_mm_mfence();
+		MEMORY_BARRIER();
 		debug("Waiting...");
 		usleep(100000);
 	}
@@ -296,7 +302,7 @@ static void virtio_legacy_init(struct virtio_device* dev) {
 	virtio_legacy_setup_rx_queue(dev, 0); // Rx
 	virtio_legacy_setup_tx_queue(dev, 1); // Tx
 	virtio_legacy_setup_tx_queue(dev, 2); // Control
-	_mm_mfence();
+	MEMORY_BARRIER();
 	// Signal OK
 	write_io8(dev->fd, VIRTIO_CONFIG_STATUS_DRIVER_OK, VIRTIO_PCI_STATUS);
 	info("Setup complete");
@@ -363,7 +369,7 @@ uint32_t virtio_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_b
 	struct virtqueue* vq = dev->rx_queue;
 	uint32_t buf_idx;
 
-	_mm_mfence();
+	MEMORY_BARRIER();
 	// Retrieve used bufs from the device
 	for (buf_idx = 0; buf_idx < num_bufs; ++buf_idx) {
 		// Section 3.2.2
@@ -414,9 +420,9 @@ uint32_t virtio_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_b
 		vq->vring.desc[idx].next = 0;
 		vq->virtual_addresses[idx] = buf;
 		vq->vring.avail->ring[vq->vring.avail->idx % vq->vring.num] = idx;
-		_mm_mfence(); // Make sure exposed descriptors reach device before index is updated
+		MEMORY_BARRIER(); // Make sure exposed descriptors reach device before index is updated
 		vq->vring.avail->idx++;
-		_mm_mfence(); // Make sure the index update reaches device before it is triggered
+		MEMORY_BARRIER(); // Make sure the index update reaches device before it is triggered
 		virtio_legacy_notify_queue(dev, 0);
 	}
 	return buf_idx;
@@ -426,7 +432,7 @@ uint32_t virtio_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_b
 	struct virtio_device* dev = IXY_TO_VIRTIO(ixy);
 	struct virtqueue* vq = dev->tx_queue;
 
-	_mm_mfence();
+	MEMORY_BARRIER();
 	// Free sent buffers
 	while (vq->vq_used_last_idx != vq->vring.used->idx) {
 		// info("We can free some buffers: %u != %u", vq->vq_used_last_idx,
@@ -438,7 +444,7 @@ uint32_t virtio_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_b
 		desc->len = 0;
 		pkt_buf_free(vq->virtual_addresses[e->id]);
 		vq->vq_used_last_idx++;
-		_mm_mfence();
+		MEMORY_BARRIER();
 	}
 	// Send buffers
 	uint32_t buf_idx;
@@ -473,9 +479,9 @@ uint32_t virtio_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_b
 		vq->vring.desc[idx].next = 0;
 		vq->vring.avail->ring[(vq->vring.avail->idx + buf_idx) % vq->vring.num] = idx;
 	}
-	_mm_mfence();
+	MEMORY_BARRIER();
 	vq->vring.avail->idx += buf_idx;
-	_mm_mfence();
+	MEMORY_BARRIER();
 	virtio_legacy_notify_queue(dev, 1);
 	return buf_idx;
 }

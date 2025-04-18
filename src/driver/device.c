@@ -1,4 +1,5 @@
 #include <sys/file.h>
+#include <fcntl.h>
 
 #include "device.h"
 #include "driver/e1000.h"
