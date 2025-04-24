@@ -563,6 +563,7 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		if (cleanable < 0) { // handle wrap-around
 			cleanable = queue->num_entries + cleanable;
 		}
+		debug("tx_index(%d), clean batch(%d)", queue->tx_index, E1000_TX_CLEAN_BATCH);
 		if (cleanable < E1000_TX_CLEAN_BATCH) {
 			break;
 		}
@@ -591,6 +592,8 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 			}
 			clean_index = wrap_ring(cleanup_to, queue->num_entries);
 		}
+		debug("TX not done, head(%d), tail(%d)", get_reg32(dev->addr, E1000_TDT), get_reg32(dev->addr, E1000_TDH));
+		sleep(1);
 	}
 	queue->clean_index = clean_index;
 
@@ -609,6 +612,7 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		queue->tx_index = next_index;
 	}
 	set_reg32(dev->addr, E1000_TDT, queue->tx_index);
+	debug("Send packet, move tx_index(%d)", queue->tx_index);
 
 	return sent;
 }
