@@ -361,10 +361,10 @@ static void init_tx(struct e1000_device* dev) {
 	uint32_t ring_size_bytes = E1000_TX_RING_SIZE * sizeof(struct e1000_tx_desc);
 	struct dma_memory mem = memory_allocate_dma(ring_size_bytes, true);
 	memset(mem.virt, 0, ring_size_bytes);
-	struct e1000_tx_desc *tx_ring = (struct e1000_tx_desc*)mem.virt;
-		for (int i = 0; i < E1000_TX_RING_SIZE; i++) {
-		tx_ring[i].status = E1000_TXD_STAT_DD;
-	}
+	/*struct e1000_tx_desc *tx_ring = (struct e1000_tx_desc*)mem.virt;*/
+		/*for (int i = 0; i < E1000_TX_RING_SIZE; i++) {*/
+		/*tx_ring[i].status = E1000_TXD_STAT_DD;*/
+	/*}*/
 	struct e1000_tx_queue* queue = (struct e1000_tx_queue*)(dev->tx_queues);
 	queue->num_entries = E1000_TX_RING_SIZE;
 	queue->descriptors = (struct e1000_tx_desc*) mem.virt;
