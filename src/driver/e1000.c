@@ -14,6 +14,7 @@
 #include "interrupts.h"
 #include "pci.h"
 #include "stats.h"
+#include "time.h"
 
 /* General e1000 driver settings & data structure */
 #define E1000_MAX_RX_RING_SIZE 4096
@@ -49,6 +50,264 @@ struct e1000_tx_queue {
 };
 
 static char* driver_name = "ixy-e1000";
+
+static int e1000_read_phy_reg(struct e1000_device* dev, uint32_t reg_addr,
+		uint16_t *phy_data)
+{
+	/* Set up Op-code, Phy Address, and register address in the MDI
+	 * Control register.  The MAC will take care of interfacing with the
+	 * PHY to retrieve the desired data.
+	 */
+	uint32_t phy_addr = 1; // 10.2.2.7 Gigabit PHY
+	uint32_t i;
+	uint32_t mdic = 0;
+
+	mdic = ((reg_addr << E1000_MDIC_REG_SHIFT) |
+			(phy_addr << E1000_MDIC_PHY_SHIFT) |
+			(E1000_MDIC_OP_READ));
+
+	set_reg32(dev->addr, E1000_MDIC, mdic);
+
+	/* Poll the ready bit to see if the MDI read completed */
+	for (i = 0; i < 64; i++) {
+		usleep(10);
+		mdic = get_reg32(dev->addr, E1000_MDIC);
+		if (mdic & E1000_MDIC_READY)
+			break;
+	}
+	if (!(mdic & E1000_MDIC_READY)) {
+		error("MDI Read did not complete");
+		return -1;
+	}
+	if (mdic & E1000_MDIC_ERROR) {
+		error("MDI Error");
+		return -1;
+	}
+	*phy_data = mdic;
+	return 0;
+}
+
+static int e1000_write_phy_reg(struct e1000_device* dev, uint32_t reg_addr, uint16_t phy_data)
+{
+	/* Set up Op-code, Phy Address, register address, and data intended
+	 * for the PHY register in the MDI Control register.  The MAC will take
+	 * care of interfacing with the PHY to send the desired data.
+	 */
+	uint32_t phy_addr = 1; // 10.2.2.7 Gigabit PHY
+	uint32_t i;
+	uint32_t mdic = 0;
+
+	mdic = (((uint32_t) phy_data) |
+			(reg_addr << E1000_MDIC_REG_SHIFT) |
+			(phy_addr << E1000_MDIC_PHY_SHIFT) |
+			(E1000_MDIC_OP_WRITE));
+
+	set_reg32(dev->addr, E1000_MDIC, mdic);
+
+	/* Poll the ready bit to see if the MDI read completed */
+	for (i = 0; i < 64; i++) {
+		usleep(10);
+		mdic = get_reg32(dev->addr, E1000_MDIC);
+		if (mdic & E1000_MDIC_READY)
+			break;
+	}
+	if (!(mdic & E1000_MDIC_READY)) {
+		error("MDI Write did not complete");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int e1000_wait_autoneg(struct e1000_device* dev)
+{
+	uint16_t i;
+	uint16_t phy_data;
+
+	info("Waiting for Auto-Neg to complete.");
+
+	/* We will wait for autoneg to complete or 4.5 seconds to expire. */
+	for (i = PHY_AUTO_NEG_TIME; i > 0; i--) {
+		/* Read the MII Status Register and wait for Auto-Neg
+		 * Complete bit to be set.
+		 */
+		if (e1000_read_phy_reg(dev, PHY_STATUS, &phy_data) < 0) {
+			error("PHY Read Error");
+			return -1;
+		}
+		if (e1000_read_phy_reg(dev, PHY_STATUS, &phy_data) < 0) {
+			error("PHY Read Error");
+			return -1;
+		}
+		if (phy_data & MII_SR_AUTONEG_COMPLETE) {
+			info("Auto-Neg complete.");
+			return 0;
+		}
+		usleep(100*1000);
+		fprintf(stdout, ".");
+	}
+	error("Auto-Neg timedout.");
+	return -1;
+}
+
+static int32_t e1000_detect_gig_phy(struct e1000_device* dev)
+{
+	int32_t ret_val;
+	uint16_t phy_id_high, phy_id_low;
+	uint32_t phy_id = 0;
+
+	/* Read the PHY ID Registers to identify which PHY is onboard. */
+	ret_val = e1000_read_phy_reg(dev, PHY_ID1, &phy_id_high);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	phy_id = (uint32_t) (phy_id_high << 16);
+	usleep(20);
+	ret_val = e1000_read_phy_reg(dev, PHY_ID2, &phy_id_low);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	phy_id |= (uint32_t) (phy_id_low & PHY_REVISION_MASK);
+	uint32_t phy_revision = (uint32_t) phy_id_low & ~PHY_REVISION_MASK;
+
+	info("Got phy id(%x) revision(%x)", phy_id, phy_revision);
+
+	return 0;
+}
+
+static int32_t e1000_phy_setup_autoneg(struct e1000_device* dev)
+{
+	int32_t ret_val;
+	uint16_t mii_autoneg_adv_reg;
+	uint16_t mii_1000t_ctrl_reg;
+
+	/* Read the MII Auto-Neg Advertisement Register (Address 4). */
+	ret_val = e1000_read_phy_reg(dev, PHY_AUTONEG_ADV, &mii_autoneg_adv_reg);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	/* Read the MII 1000Base-T Control Register (Address 9). */
+	ret_val = e1000_read_phy_reg(dev, PHY_1000T_CTRL,
+			&mii_1000t_ctrl_reg);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	/* Need to parse both autoneg_advertised and fc and set up
+	 * the appropriate PHY registers.  First we will parse for
+	 * autoneg_advertised software override.  Since we can advertise
+	 * a plethora of combinations, we need to check each bit
+	 * individually.
+	 */
+
+	/* First we clear all the 10/100 mb speed bits in the Auto-Neg
+	 * Advertisement Register (Address 4) and the 1000 mb speed bits in
+	 * the  1000Base-T Control Register (Address 9).
+	 */
+	mii_autoneg_adv_reg &= ~REG4_SPEED_MASK;
+	mii_1000t_ctrl_reg &= ~REG9_SPEED_MASK;
+
+	/*mii_autoneg_adv_reg |= NWAY_AR_10T_HD_CAPS;*/
+	/*mii_autoneg_adv_reg |= NWAY_AR_10T_FD_CAPS;*/
+	/*mii_autoneg_adv_reg |= NWAY_AR_100TX_HD_CAPS;*/
+	/*mii_autoneg_adv_reg |= NWAY_AR_100TX_FD_CAPS;*/
+	mii_1000t_ctrl_reg |= CR_1000T_FD_CAPS;
+
+	/* Flow control (RX & TX) is completely disabled by a
+	 * software over-ride.
+	 */
+	mii_autoneg_adv_reg |= (NWAY_AR_ASM_DIR | NWAY_AR_PAUSE);
+
+	ret_val = e1000_write_phy_reg(dev, PHY_AUTONEG_ADV, mii_autoneg_adv_reg);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	debug("Auto-Neg Advertising %x", mii_autoneg_adv_reg);
+
+	ret_val = e1000_write_phy_reg(dev, PHY_1000T_CTRL,
+			mii_1000t_ctrl_reg);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	return 0;
+}
+
+static int32_t e1000_copper_link_autoneg(struct e1000_device* dev)
+{
+	int32_t ret_val;
+	uint16_t phy_data;
+
+	info("Reconfiguring auto-neg advertisement params");
+	ret_val = e1000_phy_setup_autoneg(dev);
+	if (ret_val) {
+		error("Error Setting up Auto-Negotiation");
+		return ret_val;
+	}
+	info("Restarting Auto-Neg");
+
+	/* Restart auto-negotiation by setting the Auto Neg Enable bit and
+	 * the Auto Neg Restart bit in the PHY control register.
+	 */
+	ret_val = e1000_read_phy_reg(dev, PHY_CTRL, &phy_data);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	phy_data |= (MII_CR_AUTO_NEG_EN | MII_CR_RESTART_AUTO_NEG);
+	ret_val = e1000_write_phy_reg(dev, PHY_CTRL, phy_data);
+	if (ret_val) {
+		return ret_val;
+	}
+
+	ret_val = e1000_wait_autoneg(dev);
+	if (ret_val) {
+		error("Error while waiting for autoneg to complete");
+		return ret_val;
+	}
+
+	return 0;
+}
+
+static int32_t e1000_phy_power_up(struct e1000_device* dev)
+{
+	int ret;
+	uint16_t phy_data;
+	ret = e1000_read_phy_reg(dev, PHY_CTRL, &phy_data);
+	if (ret) {
+		error("Read PHY CTRL error");
+		return -1;
+	}
+	debug("PHY CTRL(%x)", phy_data);
+
+	/*phy_data |= MII_CR_RESET;*/
+	phy_data &= ~MII_CR_POWER_DOWN;
+	ret = e1000_write_phy_reg(dev, PHY_CTRL, phy_data);
+	if (ret) {
+		error("Write PHY CTRL error");
+		return -1;
+	}
+
+	ret = e1000_read_phy_reg(dev, PHY_COPPER_SPEC, &phy_data);
+	if (ret) {
+		error("Read PHY COPPER SPEC error");
+	}
+	debug("PHY COPPER(%x)", phy_data);
+
+	phy_data &= ~PHY_COPPER_SPEC_POWER_DOWN;
+	ret = e1000_write_phy_reg(dev, PHY_COPPER_SPEC, phy_data);
+	if (ret) {
+		error("Write PHY COPPER SPEC error");
+		return -1;
+	}
+	usleep(10);
+
+	return 0;
+}
 
 // see section 14.4
 //  - allocate memory from hugepage to setup receive queue
@@ -369,6 +628,9 @@ static void reset_and_init(struct e1000_device* dev) {
 	struct mac_address mac = e1000_get_mac_addr(&dev->ixy);
 	info("Initializing device %s", dev->ixy.pci_addr);
 	info("MAC address %02x:%02x:%02x:%02x:%02x:%02x", mac.addr[0], mac.addr[1], mac.addr[2], mac.addr[3], mac.addr[4], mac.addr[5]);
+
+	// Make sure PHY power up
+	e1000_phy_power_up(dev);
 
 	// reset statistics
 	e1000_read_stats(&dev->ixy, NULL);
