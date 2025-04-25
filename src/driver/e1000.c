@@ -377,14 +377,19 @@ static void init_tx(struct e1000_device* dev) {
 	set_reg32(dev->addr,E1000_TDH, 0);
 	set_reg32(dev->addr,E1000_TDT, 0);
 
+	// setup tx descriptor control regiser
+	// 4.6.6
+	set_reg32(dev->addr, E1000_TXDCTL, E1000_TXDCTL_FULL_TX_DESC_WB);
+
 	// setup tx control register
 	uint32_t flags =
 		E1000_TCTL_EN |                   // enable
 		E1000_TCTL_PSP |                  // pad short packets
-		(0x10 << E1000_TCTL_CT_SHIFT) |   // collision stuff
-		(0x40 << E1000_TCTL_COLD_SHIFT);
+		(0x0F << E1000_TCTL_CT_SHIFT) |   // collision stuff
+		(0x3F << E1000_TCTL_COLD_SHIFT);
+	flags &= ~E1000_TCTL_MULR; 			  // Disable multi tx queue
 	set_reg32(dev->addr, E1000_TCTL, flags);
-	set_reg32(dev->addr, E1000_TIPG, 10 | (8<<10) | (6<<20)); // inter-pkt gap
+	set_reg32(dev->addr, E1000_TIPG, 8 | (2<<10) | (10<<20)); // inter-pkt gap
 }
 
 static void wait_for_link(const struct e1000_device* dev) {
@@ -592,7 +597,7 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 			}
 			clean_index = wrap_ring(cleanup_to, queue->num_entries);
 		}
-		debug("TX not done, head(%d), tail(%d)", get_reg32(dev->addr, E1000_TDT), get_reg32(dev->addr, E1000_TDH));
+		debug("TX not done, head(%d), tail(%d)", get_reg32(dev->addr, E1000_TDH), get_reg32(dev->addr, E1000_TDT));
 		sleep(1);
 	}
 	queue->clean_index = clean_index;
