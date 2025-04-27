@@ -43,6 +43,12 @@
 #define E1000_GOTCL    0x0408C  /* Good Octets Transmitted Count (Low) */
 #define E1000_GOTCH    0x0408C  /* Good Octets Transmitted Count (Hi) */
 #define E1000_TPT      0x040D4  /* Total Packets Transmitted */
+#define E1000_TDFH     0x03410	/* TX Data FIFO Head - RW */
+#define E1000_TDFT     0x03418	/* TX Data FIFO Tail - RW */
+#define E1000_TDFHS    0x03420	/* TX Data FIFO Head Saved - RW */
+#define E1000_TDFTS    0x03428	/* TX Data FIFO Tail Saved - RW */
+#define E1000_TDFPC    0x03430	/* TX Data FIFO Packet Count - RW */
+#define E1000_PBA	0x01000	/* Packet Buffer Allocation - RW */
 
 /* Device Control */
 #define E1000_CTL_FD	    0x00000001	/* Full duplex.0=half; 1=full */
@@ -152,8 +158,26 @@
 					      still to be processed. */
 
 /* Transmit Descriptor command definitions [E1000 3.3.3.1] */
-#define E1000_TXD_CMD_EOP    0x01 /* End of Packet */
-#define E1000_TXD_CMD_RS     0x08 /* Report Status */
+#define E1000_TXD_DTYP_D     0x00100000	/* Data Descriptor */
+#define E1000_TXD_DTYP_C     0x00000000	/* Context Descriptor */
+#define E1000_TXD_POPTS_IXSM 0x01	/* Insert IP checksum */
+#define E1000_TXD_POPTS_TXSM 0x02	/* Insert TCP/UDP checksum */
+#define E1000_TXD_CMD_EOP    0x01000000	/* End of Packet */
+#define E1000_TXD_CMD_IFCS   0x02000000	/* Insert FCS (Ethernet CRC) */
+#define E1000_TXD_CMD_IC     0x04000000	/* Insert Checksum */
+#define E1000_TXD_CMD_RS     0x08000000	/* Report Status */
+#define E1000_TXD_CMD_RPS    0x10000000	/* Report Packet Sent */
+#define E1000_TXD_CMD_DEXT   0x20000000	/* Descriptor extension (0 = legacy) */
+#define E1000_TXD_CMD_VLE    0x40000000	/* Add VLAN tag */
+#define E1000_TXD_CMD_IDE    0x80000000	/* Enable Tidv register */
+#define E1000_TXD_STAT_DD    0x00000001	/* Descriptor Done */
+#define E1000_TXD_STAT_EC    0x00000002	/* Excess Collisions */
+#define E1000_TXD_STAT_LC    0x00000004	/* Late Collisions */
+#define E1000_TXD_STAT_TU    0x00000008	/* Transmit underrun */
+#define E1000_TXD_CMD_TCP    0x01000000	/* TCP packet */
+#define E1000_TXD_CMD_IP     0x02000000	/* IP packet */
+#define E1000_TXD_CMD_TSE    0x04000000	/* TCP Seg enable */
+#define E1000_TXD_STAT_TC    0x00000004	/* Tx Underrun */
 
 /* Transmit Descriptor status definitions [E1000 3.3.3.2] */
 #define E1000_TXD_STAT_DD    0x00000001 /* Descriptor Done */
@@ -294,31 +318,38 @@
 #define SR_1000T_REMOTE_RX_STATUS_SHIFT 12
 #define SR_1000T_LOCAL_RX_STATUS_SHIFT	13
 
-/* TX descriptor [section 3.3.3] */
-struct e1000_tx_desc
-{
-  uint64_t addr;
-  uint16_t length;
-  uint8_t cso;
-  uint8_t cmd;
-  uint8_t status;
-  uint8_t css;
-  uint16_t special;
+struct e1000_rx_desc {
+	__le64 buffer_addr; /* Address of the descriptor's data buffer */
+	__le16 length;      /* Length of data DMAed into data buffer */
+	__le16 csum; /* Packet checksum */
+	uint8_t  status;  /* Descriptor status */
+	uint8_t  errors;  /* Descriptor Errors */
+	__le16 special;
 };
 
 /* Receive Descriptor bit definitions [section 3.2.3.1] */
 #define E1000_RXD_STAT_DD       0x01    /* Descriptor Done */
 #define E1000_RXD_STAT_EOP      0x02    /* End of Packet */
 
-/* RX descriptor [section 3.2.3] */
-struct e1000_rx_desc
-{
-  uint64_t addr;       /* Address of the descriptor's data buffer */
-  uint16_t length;     /* Length of data DMAed into data buffer */
-  uint16_t csum;       /* Packet checksum */
-  uint8_t status;      /* Descriptor status */
-  uint8_t errors;      /* Descriptor Errors */
-  uint16_t special;
+/* Transmit Descriptor */
+struct e1000_tx_desc {
+	uint64_t buffer_addr;	/* Address of the descriptor's data buffer */
+	union {
+		uint32_t data;
+		struct {
+			uint16_t length;	/* Data buffer length */
+			uint8_t cso;	/* Checksum offset */
+			uint8_t cmd;	/* Descriptor control */
+		} flags;
+	} lower;
+	union {
+		uint32_t data;
+		struct {
+			uint8_t status;	/* Descriptor status */
+			uint8_t css;	/* Checksum start */
+			uint16_t special;
+		} fields;
+	} upper;
 };
 
 /* Supported Device IDs */
@@ -327,3 +358,16 @@ struct e1000_rx_desc
 #define E1000_82545EM_DEVICE_ID 0x100F
 #define E1000_82540EPA_DEVICE_ID 0x1017
 #define E1000_82574_DEVICE_ID 0x10D3
+
+/* Collision related configuration parameters */
+#define E1000_COLLISION_THRESHOLD	0xF
+#define E1000_CT_SHIFT			4
+#define E1000_COLLISION_DISTANCE        63
+#define E1000_COLLISION_DISTANCE_82542  64
+#define E1000_FDX_COLLISION_DISTANCE	E1000_COLLISION_DISTANCE
+#define E1000_HDX_COLLISION_DISTANCE	E1000_COLLISION_DISTANCE
+#define E1000_GB_HDX_COLLISION_DISTANCE 512
+#define E1000_COLD_SHIFT		12
+
+/* Additional Transmit Descriptor Control definitions */
+#define E1000_TXDCTL_QUEUE_ENABLE	0x02000000 /* Ena specific Tx Queue */
