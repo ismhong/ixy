@@ -627,7 +627,6 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		txd->upper.data = 0;
 		queue->tx_index = next_index;
 	}
-
 	set_reg32(dev->addr, E1000_TDT, queue->tx_index);
 	// debug("good packets transmit count %d", get_reg32(dev->addr, E1000_GPTC));
 	// debug("total packets transmit count %d", get_reg32(dev->addr, E1000_TPT));
