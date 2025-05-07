@@ -331,7 +331,7 @@ static void init_rx(struct e1000_device* dev) {
 	for (int i = 0; i < queue->num_entries; i++) {
 		volatile struct e1000_rx_desc *rxd = queue->descriptors + i;
 		struct pkt_buf* buf = pkt_buf_alloc(queue->mempool);
-		rxd->addr = (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+		rxd->buffer_addr = (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
     }
 
 	set_reg32(dev->addr, E1000_RDBAL, ((uint64_t) mem.phy) & 0xFFFFFFFFull);
@@ -361,35 +361,45 @@ static void init_tx(struct e1000_device* dev) {
 	uint32_t ring_size_bytes = E1000_TX_RING_SIZE * sizeof(struct e1000_tx_desc);
 	struct dma_memory mem = memory_allocate_dma(ring_size_bytes, true);
 	memset(mem.virt, 0, ring_size_bytes);
-	/*struct e1000_tx_desc *tx_ring = (struct e1000_tx_desc*)mem.virt;*/
-		/*for (int i = 0; i < E1000_TX_RING_SIZE; i++) {*/
-		/*tx_ring[i].status = E1000_TXD_STAT_DD;*/
-	/*}*/
+	// struct e1000_tx_desc *tx_ring = (struct e1000_tx_desc*)mem.virt;
+	// for (int i = 0; i < E1000_TX_RING_SIZE; i++) {
+	// 	tx_ring[i].status = 0;
+	// }
 	struct e1000_tx_queue* queue = (struct e1000_tx_queue*)(dev->tx_queues);
 	queue->num_entries = E1000_TX_RING_SIZE;
 	queue->descriptors = (struct e1000_tx_desc*) mem.virt;
 
-	set_reg32(dev->addr, E1000_TDBAL, ((uint64_t) mem.phy) & 0xFFFFFFFFull);
-	set_reg32(dev->addr, E1000_TDBAH, ((uint64_t) mem.phy) >> 32);
+	debug("tx ring phy addr:  0x%lX", mem.phy);
+	debug("tx ring virt addr: 0x%lX", (uintptr_t) mem.virt);
+
+	set_reg32(dev->addr, E1000_TDBAL, (uint32_t) (mem.phy & 0xFFFFFFFFull));
+	set_reg32(dev->addr, E1000_TDBAH, (uint32_t) (mem.phy >> 32 | 0x10));
+	set_reg32(dev->addr, E1000_TDLEN, ring_size_bytes);
 
 	// tx queue starts out empty
-	set_reg32(dev->addr,E1000_TDLEN, E1000_MAX_TX_RING_SIZE);
-	set_reg32(dev->addr,E1000_TDH, 0);
-	set_reg32(dev->addr,E1000_TDT, 0);
+	set_reg32(dev->addr, E1000_TDH, 0);
+	set_reg32(dev->addr, E1000_TDT, 0);
 
-	// setup tx descriptor control regiser
-	// 4.6.6
-	set_reg32(dev->addr, E1000_TXDCTL, E1000_TXDCTL_FULL_TX_DESC_WB);
+	// close mulitiple queue
+	clear_flags32(dev->addr, E1000_TCTL, E1000_TCTL_MULR);
+
+	uint32_t txdctl = get_reg32(dev->addr, E1000_TXDCTL);
+	txdctl = ((txdctl & ~E1000_TXDCTL_WTHRESH) |
+			(1 << 22) | 
+		    E1000_TXDCTL_FULL_TX_DESC_WB | E1000_TXDCTL_COUNT_DESC);
+	txdctl |= E1000_TXDCTL_GRAN;
+	set_reg32(dev->addr, E1000_TXDCTL, txdctl);
 
 	// setup tx control register
-	uint32_t flags =
-		E1000_TCTL_EN |                   // enable
-		E1000_TCTL_PSP |                  // pad short packets
-		(0x0F << E1000_TCTL_CT_SHIFT) |   // collision stuff
-		(0x3F << E1000_TCTL_COLD_SHIFT);
-	flags &= ~E1000_TCTL_MULR; 			  // Disable multi tx queue
-	set_reg32(dev->addr, E1000_TCTL, flags);
-	set_reg32(dev->addr, E1000_TIPG, 8 | (2<<10) | (10<<20)); // inter-pkt gap
+	uint32_t tctl;
+	tctl = get_reg32(dev->addr, E1000_TCTL);
+	tctl &= ~E1000_TCTL_CT;
+	tctl |= (E1000_TCTL_PSP | E1000_TCTL_RTLC | E1000_TCTL_EN |
+		 (E1000_COLLISION_THRESHOLD << E1000_CT_SHIFT));
+	set_reg32(dev->addr, E1000_TCTL, tctl);
+
+	set_reg32(dev->addr, E1000_TIPG, 10 | (8<<10) | (6<<20)); // inter-pkt gap
+	get_reg32(dev->addr, E1000_STATUS);
 }
 
 static void wait_for_link(const struct e1000_device* dev) {
@@ -522,7 +532,7 @@ uint32_t e1000_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 			}
 
 			// reset the descriptor
-			desc_ptr->addr = new_buf->buf_addr_phy + offsetof(struct pkt_buf, data);
+			desc_ptr->buffer_addr = new_buf->buf_addr_phy + offsetof(struct pkt_buf, data);
 			desc_ptr->status = 0;
 			queue->virtual_addresses[rx_index] = new_buf;
 
@@ -561,14 +571,13 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		return 0;
 	}
 	struct e1000_tx_queue* queue = (struct e1000_tx_queue*)(dev->tx_queues);
-
 	uint16_t clean_index = queue->clean_index; // next descriptor to clean up
+
 	while (true) {
 		int32_t cleanable = queue->tx_index - clean_index;
 		if (cleanable < 0) { // handle wrap-around
 			cleanable = queue->num_entries + cleanable;
 		}
-		debug("tx_index(%d), clean batch(%d)", queue->tx_index, E1000_TX_CLEAN_BATCH);
 		if (cleanable < E1000_TX_CLEAN_BATCH) {
 			break;
 		}
@@ -577,13 +586,13 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 			cleanup_to -= queue->num_entries;
 		}
 		volatile struct e1000_tx_desc* txd = queue->descriptors + cleanup_to;
-		uint32_t status = txd->status;
+		uint32_t status = txd->upper.data;
 		if (status & E1000_TXD_STAT_DD) {
 			int32_t i = clean_index;
 			while (true) {
 				volatile struct e1000_tx_desc* r = queue->descriptors + i;
-				if (!(r->status & E1000_TXD_STAT_DD)) {
-					error("status ring: i=%d, status=%x",i, r->status);
+				if (!(r->upper.data & E1000_TXD_STAT_DD)) {
+					error("status ring: i=%d, status=%x",i, r->upper.fields.status);
 					break;
 				}
 				struct pkt_buf* buf = queue->virtual_addresses[i];
@@ -596,9 +605,9 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 				i = wrap_ring(i, queue->num_entries);
 			}
 			clean_index = wrap_ring(cleanup_to, queue->num_entries);
+		} else {
+			break;
 		}
-		debug("TX not done, head(%d), tail(%d)", get_reg32(dev->addr, E1000_TDH), get_reg32(dev->addr, E1000_TDT));
-		sleep(1);
 	}
 	queue->clean_index = clean_index;
 
@@ -611,13 +620,17 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		struct pkt_buf* buf = bufs[sent];
 		queue->virtual_addresses[queue->tx_index] = (void*) buf;
 		volatile struct e1000_tx_desc* txd = queue->descriptors + queue->tx_index;
-		txd->addr = (uint64_t)buf->buf_addr_phy + offsetof(struct pkt_buf, data);
-		txd->length = (uint16_t)buf->size;
-		txd->cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+		txd->buffer_addr = (0x1000000000) | ((uint64_t)buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+		uint32_t flag = 0;
+		flag |= (E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS | E1000_TXD_CMD_IFCS);
+		txd->lower.data = (buf->size & 0xFFFF) | flag;
+		txd->upper.data = 0;
 		queue->tx_index = next_index;
 	}
+
 	set_reg32(dev->addr, E1000_TDT, queue->tx_index);
-	debug("Send packet, move tx_index(%d)", queue->tx_index);
+	// debug("good packets transmit count %d", get_reg32(dev->addr, E1000_GPTC));
+	// debug("total packets transmit count %d", get_reg32(dev->addr, E1000_TPT));
 
 	return sent;
 }
@@ -633,6 +646,7 @@ static void reset_and_init(struct e1000_device* dev) {
 
 	// redisable interrupts
 	set_reg32(dev->addr, E1000_IMS, 0);
+	get_reg32(dev->addr, E1000_STATUS);
 
 	struct mac_address mac = e1000_get_mac_addr(&dev->ixy);
 	info("Initializing device %s", dev->ixy.pci_addr);
@@ -707,6 +721,7 @@ struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->rx_queues = calloc(rx_queues, sizeof(struct e1000_rx_queue) + sizeof(void*) * E1000_MAX_RX_RING_SIZE);
 	dev->tx_queues = calloc(tx_queues, sizeof(struct e1000_tx_queue) + sizeof(void*) * E1000_MAX_TX_RING_SIZE);
 	reset_and_init(dev);
+	read_power_state(pci_addr);
 	return &dev->ixy;
 }
 
