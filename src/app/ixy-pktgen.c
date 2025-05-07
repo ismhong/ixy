@@ -12,7 +12,7 @@ static const uint32_t BATCH_SIZE = 2;
 #define PKT_SIZE 60
 
 static const uint8_t pkt_data[] = {
-	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // dst MAC
+	0xEC, 0xB1, 0xD7, 0x48, 0x28, 0xDA, // dst MAC
 	0x10, 0x10, 0x10, 0x10, 0x10, 0x10, // src MAC
 	0x08, 0x00,                         // ether type: IPv4
 	0x45, 0x00,                         // Version, IHL, TOS
@@ -44,7 +44,7 @@ static uint16_t calc_ip_checksum(uint8_t* data, uint32_t len) {
 }
 
 static struct mempool* init_mempool() {
-	const int NUM_BUFS = 2048;
+	const int NUM_BUFS = 512;
 	struct mempool* mempool = memory_allocate_mempool(NUM_BUFS, 0);
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
