@@ -9,6 +9,7 @@
 #include "../interrupts.h"
 
 #define MAX_QUEUES 64
+#define RASPBERRY_PI5 true
 
 // Forward declare struct to prevent cyclic include with stats.h
 struct device_stats;
