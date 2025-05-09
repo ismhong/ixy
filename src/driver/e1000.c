@@ -373,7 +373,11 @@ static void init_tx(struct e1000_device* dev) {
 	debug("tx ring virt addr: 0x%lX", (uintptr_t) mem.virt);
 
 	set_reg32(dev->addr, E1000_TDBAL, (uint32_t) (mem.phy & 0xFFFFFFFFull));
+#if RASPBERRY_PI5
 	set_reg32(dev->addr, E1000_TDBAH, (uint32_t) (mem.phy >> 32 | 0x10));
+#else
+	set_reg32(dev->addr, E1000_TDBAH, (uint32_t) (mem.phy >> 32));
+#endif
 	set_reg32(dev->addr, E1000_TDLEN, ring_size_bytes);
 
 	// tx queue starts out empty
@@ -620,14 +624,17 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		struct pkt_buf* buf = bufs[sent];
 		queue->virtual_addresses[queue->tx_index] = (void*) buf;
 		volatile struct e1000_tx_desc* txd = queue->descriptors + queue->tx_index;
+#if RASPBERRY_PI5
 		txd->buffer_addr = (0x1000000000) | ((uint64_t)buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#else
+		txd->buffer_addr = ((uint64_t)buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#endif
 		uint32_t flag = 0;
 		flag |= (E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS | E1000_TXD_CMD_IFCS);
 		txd->lower.data = (buf->size & 0xFFFF) | flag;
 		txd->upper.data = 0;
 		queue->tx_index = next_index;
 	}
-
 	set_reg32(dev->addr, E1000_TDT, queue->tx_index);
 	// debug("good packets transmit count %d", get_reg32(dev->addr, E1000_GPTC));
 	// debug("total packets transmit count %d", get_reg32(dev->addr, E1000_TPT));

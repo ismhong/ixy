@@ -6,7 +6,7 @@
 #include "driver/device.h"
 
 // number of packets sent simultaneously to our driver
-static const uint32_t BATCH_SIZE = 2;
+static const uint32_t BATCH_SIZE = 64;
 
 // excluding CRC (offloaded by default)
 #define PKT_SIZE 60
@@ -44,7 +44,7 @@ static uint16_t calc_ip_checksum(uint8_t* data, uint32_t len) {
 }
 
 static struct mempool* init_mempool() {
-	const int NUM_BUFS = 512;
+	const int NUM_BUFS = 1024;
 	struct mempool* mempool = memory_allocate_mempool(NUM_BUFS, 0);
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
@@ -109,4 +109,3 @@ int main(int argc, char* argv[]) {
 		// track stats
 	}
 }
-

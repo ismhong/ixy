@@ -1,7 +1,10 @@
 #include "memory.h"
 #include "driver/device.h"
 #include "log.h"
+
+#if defined(__aarch64__)
 #include "./kpage_ncache_api.h"
+#endif
 
 #include <fcntl.h>
 #include <linux/limits.h>
@@ -79,7 +82,11 @@ struct dma_memory memory_allocate_dma(size_t size, bool require_contiguous) {
 		// don't keep it around in the hugetlbfs
 		close(fd);
 		unlink(path);
+
+		// mark this memory to non-cacheable
+#if defined(__aarch64__)
 		mark_kpage_ncache((uint64_t)virt_addr);
+#endif
 		return (struct dma_memory) {
 			.virt = virt_addr,
 			.phy = virt_to_phys(virt_addr)

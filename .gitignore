@@ -16,6 +16,7 @@ Makefile
 build
 ixy-fwd
 ixy-pktgen
+ixy-pcap
 *.o
 *.so
 build.*
