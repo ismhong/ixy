@@ -17,6 +17,7 @@
 #define E1000_TCTL     0x00400  /* TX Control - RW */
 #define E1000_TIPG     0x00410  /* TX Inter-packet gap -RW */
 #define E1000_POEMB    0x00F10  /* PHY OEM Bits -RW */
+#define E1000_RXDCTL   0x02828	/* RX Descriptor Control queue 0 - RW */
 #define E1000_RDBAL    0x02800  /* RX Descriptor Base Address Low - RW */
 #define E1000_RDBAH    0x02804  /* RX Descriptor Base Address High - RW */
 #define E1000_RDTR     0x02820  /* RX Delay Timer */
@@ -40,9 +41,10 @@
 #define E1000_GPTC     0x04080  /* Good Packets Transmitted Count */
 #define E1000_GORCL    0x04088  /* Good Octets Received Count (Low) */
 #define E1000_GORCH    0x0408C  /* Good Octets Received Count (Hi) */
-#define E1000_GOTCL    0x0408C  /* Good Octets Transmitted Count (Low) */
-#define E1000_GOTCH    0x0408C  /* Good Octets Transmitted Count (Hi) */
+#define E1000_GOTCL    0x04090  /* Good Octets Transmitted Count (Low) */
+#define E1000_GOTCH    0x04094  /* Good Octets Transmitted Count (Hi) */
 #define E1000_TPT      0x040D4  /* Total Packets Transmitted */
+#define E1000_TPR	0x040D0  /* Total Packets Rx - R/clr */
 #define E1000_TDFH     0x03410	/* TX Data FIFO Head - RW */
 #define E1000_TDFT     0x03418	/* TX Data FIFO Tail - RW */
 #define E1000_TDFHS    0x03420	/* TX Data FIFO Head Saved - RW */

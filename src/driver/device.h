@@ -51,9 +51,10 @@ struct ixy_device {
 	bool vfio;
 	int vfio_fd; // device fd
 	struct interrupts interrupts;
+	bool loopback; // loopback mode
 };
 
-struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout);
+struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool loopback);
 
 // Public stubs that forward the calls to the driver-specific implementations
 static inline uint32_t ixy_rx_batch(struct ixy_device* dev, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {
