@@ -510,7 +510,7 @@ static void reset_and_init(struct ixgbe_device* dev) {
  * 	- if set to 0 the interrupt is disabled entirely)
  * @return The initialized IXGBE device.
  */
-struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout) {
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool loopback) {
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
 	}
@@ -552,6 +552,7 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	// 0x028 (10ys) => 97600 INT/s
 	dev->ixy.interrupts.itr_rate = 0x028;
 	dev->ixy.interrupts.timeout_ms = interrupt_timeout;
+	dev->ixy.loopback = loopback;
 
 	if (!dev->ixy.vfio && interrupt_timeout != 0) {
 		warn("Interrupts requested but VFIO not available: Disabling Interrupts!");

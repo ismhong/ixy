@@ -19,6 +19,7 @@ struct device_stats {
 void print_stats(struct device_stats* stats);
 void print_stats_diff(struct device_stats* stats_new, struct device_stats* stats_old, uint64_t nanos_passed);
 void stats_init(struct device_stats* stats, struct ixy_device* dev);
+uint32_t diff_mbit(uint64_t bytes_new, uint64_t bytes_old, uint64_t pkts_new, uint64_t pkts_old, uint64_t nanos);
 
 uint64_t monotonic_time();
 

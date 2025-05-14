@@ -318,11 +318,12 @@ static void init_rx(struct e1000_device* dev) {
 	uint32_t ring_size_bytes = E1000_RX_RING_SIZE * sizeof(struct e1000_rx_desc);
 	struct dma_memory mem = memory_allocate_dma(ring_size_bytes, true);
 	memset(mem.virt, 0, ring_size_bytes);
-	struct e1000_rx_desc* rx_ring = (struct e1000_rx_desc*)mem.virt;
+
 	struct e1000_rx_queue* queue = (struct e1000_rx_queue*)(dev->rx_queues);
 	queue->num_entries = E1000_RX_RING_SIZE;
 	queue->rx_index = 0;
 	queue->descriptors = (struct e1000_rx_desc*) mem.virt;
+
 	int mempool_size = E1000_RX_RING_SIZE + E1000_TX_RING_SIZE;
 	queue->mempool = memory_allocate_mempool(
 		mempool_size < E1000_MIN_MEMPOOL_ENTRIES ?
@@ -331,26 +332,43 @@ static void init_rx(struct e1000_device* dev) {
 	for (int i = 0; i < queue->num_entries; i++) {
 		volatile struct e1000_rx_desc *rxd = queue->descriptors + i;
 		struct pkt_buf* buf = pkt_buf_alloc(queue->mempool);
+		queue->virtual_addresses[i] = buf;
+#if RASPBERRY_PI5
+		rxd->buffer_addr = (0x1000000000) | (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#else
 		rxd->buffer_addr = (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#endif
+		rxd->status = 0;
+		rxd->length = 0;
     }
 
-	set_reg32(dev->addr, E1000_RDBAL, ((uint64_t) mem.phy) & 0xFFFFFFFFull);
+	set_reg32(dev->addr, E1000_RDBAL, (uint32_t) (mem.phy & 0xFFFFFFFFull));
+#if RASPBERRY_PI5
+	set_reg32(dev->addr, E1000_RDBAH, (uint32_t) (mem.phy >> 32 | 0x10));
+#else
 	set_reg32(dev->addr, E1000_RDBAH, ((uint64_t) mem.phy) >> 32);
+#endif
 	set_reg32(dev->addr, E1000_RDH, 0);
-	set_reg32(dev->addr, E1000_RDT, 0);
-	set_reg32(dev->addr, E1000_RDLEN, sizeof(rx_ring));
+	set_reg32(dev->addr, E1000_RDT, queue->num_entries - 1);
+	set_reg32(dev->addr, E1000_RDLEN, ring_size_bytes);
 
 	// init multicast table array
 	for (int i = 0; i < 128; i++) {
-		set_reg32(dev->addr, E1000_MTA + 4*i, 0);
+		set_reg32(dev->addr, E1000_MTA + 4 * i, 0);
 	}
 
 	// setup receive control register
-	set_reg32(dev->addr, E1000_RCTL,
+	uint32_t rctl = get_reg32(dev->addr, E1000_RCTL);
+	rctl |= (
 		E1000_RCTL_EN |       // enable receiver
 		E1000_RCTL_BAM |      // enable broadcast
 		E1000_RCTL_SZ_2048 |  // 2048-byte rx buffers
-		E1000_RCTL_SECRC);    // strip CRC
+		E1000_RCTL_SECRC 	  // strip CRC
+	);
+	// Enable MAC loopback if user asked
+	rctl = (dev->ixy.loopback)? rctl | E1000_RCTL_LBM_MAC : rctl;
+	set_reg32(dev->addr, E1000_RCTL, rctl);
+	get_reg32(dev->addr, E1000_STATUS);
 }
 
 
@@ -361,10 +379,7 @@ static void init_tx(struct e1000_device* dev) {
 	uint32_t ring_size_bytes = E1000_TX_RING_SIZE * sizeof(struct e1000_tx_desc);
 	struct dma_memory mem = memory_allocate_dma(ring_size_bytes, true);
 	memset(mem.virt, 0, ring_size_bytes);
-	// struct e1000_tx_desc *tx_ring = (struct e1000_tx_desc*)mem.virt;
-	// for (int i = 0; i < E1000_TX_RING_SIZE; i++) {
-	// 	tx_ring[i].status = 0;
-	// }
+
 	struct e1000_tx_queue* queue = (struct e1000_tx_queue*)(dev->tx_queues);
 	queue->num_entries = E1000_TX_RING_SIZE;
 	queue->descriptors = (struct e1000_tx_desc*) mem.virt;
@@ -383,9 +398,6 @@ static void init_tx(struct e1000_device* dev) {
 	// tx queue starts out empty
 	set_reg32(dev->addr, E1000_TDH, 0);
 	set_reg32(dev->addr, E1000_TDT, 0);
-
-	// close mulitiple queue
-	clear_flags32(dev->addr, E1000_TCTL, E1000_TCTL_MULR);
 
 	uint32_t txdctl = get_reg32(dev->addr, E1000_TXDCTL);
 	txdctl = ((txdctl & ~E1000_TXDCTL_WTHRESH) |
@@ -482,6 +494,9 @@ void e1000_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 	uint64_t rx_bytes = get_reg32(dev->addr, E1000_GORCL) + (((uint64_t) get_reg32(dev->addr, E1000_GORCH)) << 32);
 	uint64_t tx_bytes = get_reg32(dev->addr, E1000_GOTCL) + (((uint64_t) get_reg32(dev->addr, E1000_GOTCH)) << 32);
 
+	debug("missed packets count %u", get_reg32(dev->addr, 0x04010));
+	debug("rx error count %u", get_reg32(dev->addr, 0x0400C));
+	
 	if (stats) {
 		stats->rx_pkts += rx_pkts;
 		stats->tx_pkts += tx_pkts;
@@ -520,6 +535,7 @@ uint32_t e1000_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	for (buf_index = 0; buf_index < num_bufs; buf_index++) {
 		volatile struct e1000_rx_desc* desc_ptr = queue->descriptors + rx_index;
 		uint32_t status = desc_ptr->status;
+
 		// if rx desc contains complete data, proceed to copy it out
 		if (status & E1000_RXD_STAT_DD) {
 			if (!(status & E1000_RXD_STAT_EOP)) {
@@ -528,17 +544,22 @@ uint32_t e1000_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 
 			struct e1000_rx_desc desc = *desc_ptr;
 			struct pkt_buf* buf = (struct pkt_buf*) queue->virtual_addresses[rx_index];
-			buf->size = desc.length;
-
-			struct pkt_buf* new_buf = pkt_buf_alloc(queue->mempool);
-			if (!new_buf) {
-				error("failed to allocate new mbuf for rx");
-			}
-
-			// reset the descriptor
-			desc_ptr->buffer_addr = new_buf->buf_addr_phy + offsetof(struct pkt_buf, data);
 			desc_ptr->status = 0;
-			queue->virtual_addresses[rx_index] = new_buf;
+			buf->size = desc.length;
+			if (!ixy->loopback) {
+				struct pkt_buf* new_buf = pkt_buf_alloc(queue->mempool);
+				if (!new_buf) {
+					error("failed to allocate new mbuf for rx");
+				}
+				queue->virtual_addresses[rx_index] = new_buf;
+				volatile struct e1000_rx_desc* new_buf_desc = queue->descriptors + rx_index;
+				new_buf_desc->status = 0;
+#if RASPBERRY_PI5
+				new_buf_desc->buffer_addr = (0x1000000000) | (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#else
+				new_buf_desc->buffer_addr = (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));
+#endif
+			}
 
 			//store data in output buffers
 			bufs[buf_index] = buf;
@@ -600,7 +621,7 @@ uint32_t e1000_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 					break;
 				}
 				struct pkt_buf* buf = queue->virtual_addresses[i];
-				if (buf) {
+				if (buf && !ixy->loopback) {
 					pkt_buf_free(buf);
 				}
 				if (i == cleanup_to) {
@@ -692,7 +713,7 @@ static void reset_and_init(struct e1000_device* dev) {
  * 	- if set to 0 the interrupt is disabled entirely)
  * @return The initialized e1000 device.
  */
-struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout) {
+struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool loopback) {
   debug("init e1000");
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
@@ -722,6 +743,7 @@ struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->ixy.interrupts.interrupts_enabled = false;
 	dev->ixy.interrupts.itr_rate = 0;
 	dev->ixy.interrupts.timeout_ms = 0;
+	dev->ixy.loopback = loopback;
 
 	debug("mapping BAR0 region via pci file...");
 	dev->addr = pci_map_resource(pci_addr);

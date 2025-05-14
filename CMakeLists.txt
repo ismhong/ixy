@@ -18,10 +18,14 @@ include_directories(
 )
 
 set(SOURCE_COMMON src/pci.c src/memory.c src/stats.c src/interrupts.c src/driver/device.c  src/driver/e1000.c src/driver/ixgbe.c src/driver/virtio.c src/libixy-vfio.c)
+set(CMAKE_EXE_LINKER_FLAGS "-largp -static")
 
-set(CMAKE_EXE_LINKER_FLAGS "-static")
-
-add_executable(ixy-pktgen src/app/ixy-pktgen.c ${SOURCE_COMMON})
-add_executable(ixy-fwd src/app/ixy-fwd.c ${SOURCE_COMMON})
-add_executable(ixy-pcap src/app/ixy-pcap.c ${SOURCE_COMMON})
+# add_executable(ixy-pktgen src/app/ixy-pktgen.c ${SOURCE_COMMON})
+# add_executable(ixy-fwd src/app/ixy-fwd.c ${SOURCE_COMMON})
+# add_executable(ixy-pcap src/app/ixy-pcap.c ${SOURCE_COMMON})
+add_executable(ixy-loopback src/app/ixy-loopback ${SOURCE_COMMON})
 add_library(ixy-vfio SHARED src/libixy-vfio.c)
+
+target_link_libraries(ixy-loopback PRIVATE
+    argp
+)

@@ -17,7 +17,9 @@ build
 ixy-fwd
 ixy-pktgen
 ixy-pcap
+ixy-fwd-loopback
 *.o
 *.so
+*.csv
 build.*
 output/

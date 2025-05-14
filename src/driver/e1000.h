@@ -14,7 +14,7 @@ struct e1000_device {
 
 #define IXY_TO_E1000(ixy_device) container_of(ixy_device, struct e1000_device, ixy)
 
-struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout);
+struct ixy_device* e1000_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool loopback);
 uint32_t e1000_get_link_speed(const struct ixy_device* dev);
 struct mac_address e1000_get_mac_addr(const struct ixy_device* dev);
 void e1000_set_mac_addr(struct ixy_device* dev, struct mac_address mac);
