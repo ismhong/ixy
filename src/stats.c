@@ -7,11 +7,11 @@ void print_stats(struct device_stats* stats) {
 	printf("[%s] TX: %zu bytes %zu packets\n", stats->device ? stats->device->pci_addr : "???", stats->tx_bytes, stats->tx_pkts);
 }
 
-static double diff_mpps(uint64_t pkts_new, uint64_t pkts_old, uint64_t nanos) {
+double diff_mpps(uint64_t pkts_new, uint64_t pkts_old, uint64_t nanos) {
 	return (double) (pkts_new - pkts_old) / 1000000.0 / ((double) nanos / 1000000000.0);
 }
 
-static uint32_t diff_mbit(uint64_t bytes_new, uint64_t bytes_old, uint64_t pkts_new, uint64_t pkts_old, uint64_t nanos) {
+uint32_t diff_mbit(uint64_t bytes_new, uint64_t bytes_old, uint64_t pkts_new, uint64_t pkts_old, uint64_t nanos) {
 	// take stuff on the wire into account, i.e., the preamble, SFD and IFG (20 bytes)
 	// otherwise it won't show up as 10000 mbit/s with small packets which is confusing
 	return (uint32_t) (((bytes_new - bytes_old) / 1000000.0 / ((double) nanos / 1000000000.0)) * 8

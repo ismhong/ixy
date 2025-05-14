@@ -551,7 +551,7 @@ uint32_t e1000_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 					error("failed to allocate new mbuf for rx");
 				}
 				queue->virtual_addresses[rx_index] = new_buf;
-				struct e1000_rx_desc* new_buf_desc = queue->descriptors + rx_index;
+				volatile struct e1000_rx_desc* new_buf_desc = queue->descriptors + rx_index;
 				new_buf_desc->status = 0;
 #if RASPBERRY_PI5
 				new_buf_desc->buffer_addr = (0x1000000000) | (uint64_t) (buf->buf_addr_phy + offsetof(struct pkt_buf, data));

@@ -1,13 +1,20 @@
 #!/bin/bash
+set -e
 
-pkt_size=(64 128 256 512 1024 1400)
-exec_time=10
-pcie_addr="0000:01:00.0"
+CPU=3
+# set up DVFS to performance
+echo performance > /sys/devices/system/cpu/cpu${CPU}/cpufreq/scaling_governor
 
-for pkt in "${pkt_size[@]}"; do
-    export PKT_SIZE=${pkt}
-    export EXEC_TIME=${exec_time}
-    cmake "-DPKT_SIZE=${pkt}" "-DEXEC_TIME=${exec_time}" . > /dev/null 2>&1
-    make > /dev/null 2>&1
-    sudo ./ixy-fwd-loopback ${pcie_addr}
+# run test
+PKT_SIZE=(64 128 256 512 1024 1400)
+EXEC_TIME=10
+PCIE_ADDR="0000:01:00.0"
+
+CSV_FILE="output.csv"
+rm -f $CSV_FILE
+echo "Packet Size (bytes),Tx (Mbits/s),Rx (Mbits/s)" > $CSV_FILE
+
+for pkt in "${PKT_SIZE[@]}"; do
+    echo $pkt
+    ./ixy-fwd-loopback ${PCIE_ADDR} ${pkt} ${EXEC_TIME} ${CSV_FILE}
 done
