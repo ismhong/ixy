@@ -363,9 +363,10 @@ static void init_rx(struct e1000_device* dev) {
 		E1000_RCTL_EN |       // enable receiver
 		E1000_RCTL_BAM |      // enable broadcast
 		E1000_RCTL_SZ_2048 |  // 2048-byte rx buffers
-		E1000_RCTL_SECRC |	  // strip CRC
-		E1000_RCTL_LBM_MAC	  // MAC loop back
+		E1000_RCTL_SECRC 	  // strip CRC
 	);
+	// Enable MAC loopback if user asked
+	rctl = (dev->ixy.loopback)? rctl | E1000_RCTL_LBM_MAC : rctl;
 	set_reg32(dev->addr, E1000_RCTL, rctl);
 	get_reg32(dev->addr, E1000_STATUS);
 }
