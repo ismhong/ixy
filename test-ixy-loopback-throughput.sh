@@ -12,9 +12,8 @@ PCIE_ADDR="0000:01:00.0"
 
 CSV_FILE="output.csv"
 rm -f $CSV_FILE
-echo "Packet Size (bytes),Tx (Mbits/s),Rx (Mbits/s)" > $CSV_FILE
 
 for pkt in "${PKT_SIZE[@]}"; do
-    echo $pkt
-    ./ixy-fwd-loopback ${PCIE_ADDR} ${pkt} ${EXEC_TIME} ${CSV_FILE}
+    echo Start loopback throughput test for packet size: $pkt
+    ./ixy-loopback -d ${PCIE_ADDR} -s ${pkt} -t ${EXEC_TIME} -f ${CSV_FILE}
 done

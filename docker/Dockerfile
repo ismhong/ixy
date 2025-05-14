@@ -5,6 +5,7 @@ FROM ${RUNTIME_ARCH}/alpine:${ALPINE_VERSION}
 RUN apk update && apk add --no-cache alpine-sdk \
                                      linux-headers \
                                      cmake \
+                                     argp-standalone \
                                      ninja
 
 WORKDIR /working
